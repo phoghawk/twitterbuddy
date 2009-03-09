@@ -1,0 +1,67 @@
+#!/usr/bin/ruby
+# Copyright Benjamin Goering, 2009
+# b@enjam.in
+# Released under GNU GPL v3
+require 'rubygems'
+require 'twitter'
+require 'htmlentities'
+require 'optparse'
+require 'ostruct'
+
+if ARGV.size == 0 then
+  print "Not enough args. Use `twitterBuddy -h` for help.\n"
+  exit 1
+end
+
+class TwitterOpts
+  def self.parse(args)
+    options = OpenStruct.new
+    options.linebreaks = 2
+    options.who = :friends
+    options.numtweets = 15
+    options.title = "Twitter Timeline"
+    options.hidetitle = false
+    
+    opts = OptionParser.new do |opts|
+      
+      opts.on_tail("-h", "--help", "Show this message") do
+	puts opts
+	exit
+      end
+      opts.on("-u", "--username login",
+      	"Login to twitter with username [login]")	{|login| options.login = login}
+      opts.on("-p", "--password pass",
+      	"Login to twitter with password [pass]")	{|pass| options.pass = pass}
+      opts.on("-n", "--num-tweets num", Integer,
+      	"Show [num] tweets")				{|n| options.numtweets = n}
+      opts.on("-l", "--line-breaks breaks", Integer,
+      	"Insert [breaks] linebreaks between each tweet"){|breaks| options.linebreaks = breaks}
+      opts.on("-w", "--who who", ["everybody","me",:friends],
+      "Select which tweets to show (public, mine, friends)") do |who|
+        who =   case who
+                  when "me" then :user
+                  when "everybody" then :public
+                end if who.class == String
+        options.who = who
+      end
+      opts.on("-t", "--title [title]", String,
+      	"Replaces title text with custom [title] string") {|title| options.title = title}
+      opts.on("-i", "--hide-title", "Hide title string") {|i| options.hidetitle = i}
+      
+    end #opts
+    
+    opts.parse!(args)
+    options
+  end #parse()
+  
+end #class TwitterOpts
+
+options = TwitterOpts.parse(ARGV)
+twit = Twitter::Base.new(options.login,options.pass)
+decoder = HTMLEntities.new
+newest_tweets = twit.timeline(options.who).select{|tweet| DateTime.parse(tweet.created_at) >= (DateTime.now-1)}[0,options.numtweets]
+
+print options.title + "\n"*options.linebreaks unless (options.hidetitle)
+for tweet in newest_tweets
+	printf "%s: %s",tweet.user.screen_name,decoder.decode(tweet.text) + "\n"*options.linebreaks
+end
