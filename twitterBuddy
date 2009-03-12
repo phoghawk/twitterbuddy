@@ -17,36 +17,49 @@ class TwitterOpts
   def self.parse(args)
     options = OpenStruct.new
     options.linebreaks = 2
-    options.who = :friends
     options.numtweets = 15
     options.title = "Twitter Timeline"
     options.hidetitle = false
+    options.who = :friends
+    options.need_to_log_on = false;
     
     opts = OptionParser.new do |opts|
       
       opts.on_tail("-h", "--help", "Show this message") do
-	puts opts
-	exit
+	      puts opts
+	      puts "\tNote: the --search and --hashtag switches have precedence over the -w flag."
+	      puts "\tAlso: you do not need to supply username and password flags to use the --search and --hashtag switches."
+	      exit
       end
       opts.on("-u", "--username login",
       	"Login to twitter with username [login]")	{|login| options.login = login}
       opts.on("-p", "--password pass",
-      	"Login to twitter with password [pass]")	{|pass| options.pass = pass}
+      	"Login to twitter with password [pass]") do |pass|
+      	  options.pass = pass
+      	  options.need_to_log_on = true
+      end
       opts.on("-n", "--num-tweets num", Integer,
       	"Show [num] tweets")				{|n| options.numtweets = n}
       opts.on("-l", "--line-breaks breaks", Integer,
       	"Insert [breaks] linebreaks between each tweet"){|breaks| options.linebreaks = breaks}
       opts.on("-w", "--who who", ["everybody","me",:friends],
-      "Select which tweets to show (public, mine, friends)") do |who|
+      "Select which tweets to show (public, me, friends)") do |who|
         who =   case who
                   when "me" then :user
                   when "everybody" then :public
                 end if who.class == String
+        options.need_to_log_on = true;
         options.who = who
       end
-      opts.on("-t", "--title [title]", String,
+      opts.on("-s", "--search query",
+        "Show results of search for keyword [query]") do |query|
+          options.searchquery = query
+      end
+      opts.on("-g", "--hashtag tag", String,
+        "Shows only tweets with hashtag of [tag]") {|tag| options.hasht = tag}
+      opts.on("-t", "--title title", String,
       	"Replaces title text with custom [title] string") {|title| options.title = title}
-      opts.on("-i", "--hide-title", "Hide title string") {|i| options.hidetitle = i}
+      opts.on(:NONE, "-i", "--hide-title", "Hide title string") { options.hidetitle = true}
       
     end #opts
     
@@ -57,11 +70,33 @@ class TwitterOpts
 end #class TwitterOpts
 
 options = TwitterOpts.parse(ARGV)
-twit = Twitter::Base.new(options.login,options.pass)
 decoder = HTMLEntities.new
-newest_tweets = twit.timeline(options.who).select{|tweet| DateTime.parse(tweet.created_at) >= (DateTime.now-1)}[0,options.numtweets]
-
 print options.title + "\n"*options.linebreaks unless (options.hidetitle)
-for tweet in newest_tweets
-	printf "%s: %s",tweet.user.screen_name,decoder.decode(tweet.text) + "\n"*options.linebreaks
+if (options.searchquery or options.hasht)
+  search = Twitter::Search.new
+  search.containing(options.searchquery) if options.searchquery
+  search.hashed(options.hasht) if options.hasht
+  begin
+    tempr = search.fetch
+    raise error if tempr["results"].size==0
+  rescue
+    puts "ERROR: No results found for that query"
+    exit 1
+  end
+  results = tempr["results"]
+  for result in results[0,options.numtweets]
+    printf "%s: %s",result["from_user"],decoder.decode(result["text"]) + "\n"*options.linebreaks
+  end
+elsif options.need_to_log_on then
+  begin
+    twit = Twitter::Base.new(options.login,options.pass)
+    tweets = twit.timeline(options.who)[0,options.numtweets]
+    for tweet in tweets
+    	printf "%s: %s",tweet.user.screen_name,decoder.decode(tweet.text) + "\n"*options.linebreaks
+    end
+  rescue
+    puts "ERROR: Could not connect with twitter. Did you specify a username and password?"
+    exit 1
+  end
+else 
 end
